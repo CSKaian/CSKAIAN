@@ -304,8 +304,10 @@ export const ThirdPartyGasModule: React.FC<Props> = ({
             thirdParty: totalDayThirdParty
           }
         };
-        onUpdate?.('dailyThirdPartyLedger', updatedLedger);
-        onUpdate?.('expenses', updatedExpenses);
+        onUpdate?.({
+          dailyThirdPartyLedger: updatedLedger,
+          expenses: updatedExpenses
+        }, undefined, true);
         showToast?.('Item Third Party berhasil dihapus', 'success');
       } else {
         const prevItems = currentOutletState.dailyGasLedger?.[inputDate] || [];
@@ -322,8 +324,10 @@ export const ThirdPartyGasModule: React.FC<Props> = ({
             gas: totalDayGas
           }
         };
-        onUpdate?.('dailyGasLedger', updatedLedger);
-        onUpdate?.('expenses', updatedExpenses);
+        onUpdate?.({
+          dailyGasLedger: updatedLedger,
+          expenses: updatedExpenses
+        }, undefined, true);
         showToast?.('Item Gas berhasil dihapus', 'success');
       }
     }

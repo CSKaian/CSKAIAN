@@ -762,7 +762,7 @@ export const StrategiMenuModule: React.FC<Props> = ({
         [selectedDate]: newRecord
       };
 
-      onUpdate({ dailyStrategy: updatedDailyStrategy });
+      onUpdate({ dailyStrategy: updatedDailyStrategy }, undefined, true);
 
       try {
         const outletDocRef = doc(db, 'dashboards', activeOutlet);
@@ -776,6 +776,33 @@ export const StrategiMenuModule: React.FC<Props> = ({
     } catch (e) {
       console.error(e);
       showToast?.('Gagal menyimpan data strategi. Silakan coba lagi.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteStrategyForDate = async () => {
+    if (!data.dailyStrategy?.[selectedDate]) {
+      showToast?.('Belum ada data strategi tersimpan di tanggal ini.', 'info');
+      return;
+    }
+    if (!window.confirm(`Hapus seluruh data menu strategi untuk tanggal ${selectedDate}?`)) return;
+    setIsSaving(true);
+    try {
+      const nextDaily = { ...(data.dailyStrategy || {}) };
+      delete nextDaily[selectedDate];
+      onUpdate({ dailyStrategy: nextDaily }, undefined, true);
+      try {
+        const outletDocRef = doc(db, 'dashboards', activeOutlet);
+        await setDoc(outletDocRef, {
+          dailyStrategy: nextDaily,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {}
+      showToast?.(`Data strategi tanggal ${selectedDate} berhasil dihapus.`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast?.('Gagal menghapus data strategi', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -1278,6 +1305,19 @@ ${notes || '-'}`;
               <i className="fas fa-file-pdf text-xs"></i>
               <span>PDF</span>
             </button>
+
+            {storedRecord && (
+              <button
+                type="button"
+                onClick={handleDeleteStrategyForDate}
+                disabled={isSaving}
+                className="px-3.5 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                title="Hapus seluruh data menu strategi untuk tanggal ini"
+              >
+                <i className="fas fa-trash-alt text-xs"></i>
+                <span className="hidden sm:inline">Hapus Tanggal Ini</span>
+              </button>
+            )}
 
             <button
               onClick={handleSave}
@@ -3210,7 +3250,18 @@ ${notes || '-'}`;
             <span className="text-[10px] text-slate-500 font-bold">
               {storedRecord ? `Terakhir disimpan: ${new Date(storedRecord.updatedAt || '').toLocaleString('id-ID')}` : 'Belum ada data tersimpan untuk tanggal ini'}
             </span>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {storedRecord && (
+                <button
+                  type="button"
+                  onClick={handleDeleteStrategyForDate}
+                  disabled={isSaving}
+                  className="px-4 py-3 rounded-2xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Hapus seluruh data strategi tanggal ini"
+                >
+                  <i className="fas fa-trash-alt"></i> Hapus Tanggal Ini
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleCopyWhatsApp}

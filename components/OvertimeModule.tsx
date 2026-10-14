@@ -659,7 +659,7 @@ const OvertimeModule: React.FC<Props> = ({
         updatedDailyOT[localDate] = updatedDailyOT[localDate].filter(
           (e) => e.id !== id,
         );
-        onUpdate({ dailyOvertime: updatedDailyOT });
+        onUpdate({ dailyOvertime: updatedDailyOT }, undefined, true);
         setShowConfirm(null);
       },
     });
@@ -683,7 +683,7 @@ const OvertimeModule: React.FC<Props> = ({
         } else {
           delete updatedDailyOT[date];
         }
-        onUpdate({ dailyOvertime: updatedDailyOT });
+        onUpdate({ dailyOvertime: updatedDailyOT }, undefined, true);
         setShowConfirm(null);
       },
     });

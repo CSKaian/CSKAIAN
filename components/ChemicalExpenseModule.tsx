@@ -346,7 +346,7 @@ export const ChemicalExpenseModule: React.FC<Props> = ({
           }
         }
       };
-    });
+    }, undefined, true);
     showToast?.('Item berhasil dihapus & total Main Store di Receiving Sheet diperbarui.', 'info');
   };
 

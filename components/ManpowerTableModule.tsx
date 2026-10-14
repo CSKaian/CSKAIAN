@@ -55,7 +55,7 @@ export const ManpowerTableModule: React.FC<Props> = ({
     all[outletKey] = updated;
     all[legacyOutletKey] = updated;
     all[`${selectedOutlet}_LATEST`] = updated;
-    onUpdate('manpowerData', all);
+    onUpdate('manpowerData', all, true);
     if (toastMsg && showToast) {
       showToast(toastMsg, 'success');
     }

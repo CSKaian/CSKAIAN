@@ -321,7 +321,7 @@ export const CityLedgerModule: React.FC<Props> = ({
           }
         }
       };
-    });
+    }, undefined, true);
 
     showToast?.(`Tagihan "${itemName}" dihapus.`, 'info');
   };

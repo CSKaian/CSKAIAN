@@ -276,7 +276,7 @@ const AdminModule: React.FC<Props> = ({ data, onUpdate, onRestore, filters, onFi
       onConfirm: () => {
         const updatedDailyGSI = { ...data.dailyGSI };
         delete updatedDailyGSI[gsiDate];
-        onUpdate('dailyGSI', updatedDailyGSI);
+        onUpdate('dailyGSI', updatedDailyGSI, true);
         setShowConfirm(null);
       }
     });

@@ -1221,12 +1221,16 @@ const App: React.FC = () => {
         }
       });
 
+      const isPriority = isPrioritySync.current;
+      isPrioritySync.current = false;
+
       oSuccess = await saveOutletData(
         user.email, 
         user.selectedOutlet!, 
         changedMonths, 
         oldOutletData,
-        globalChanged ? changedGlobalFields : undefined
+        globalChanged ? changedGlobalFields : undefined,
+        isPriority
       );
 
       if (oSuccess) {
@@ -1381,12 +1385,11 @@ const App: React.FC = () => {
               if (!isLocalDirty) {
                 // Local state is clean/in sync with last known server state: adopt server state 100% to handle deletions, modifications, etc.
                 nextGlobal[field] = cloudVal;
-              } else {
-                // Local state has unsaved changes: merge-in server changes to preserve ongoing work
-                nextGlobal[field] = mergeDeep(prev[field], cloudVal);
+                lastSyncedGlobal.current[field] = cloudHash;
+                hasChange = true;
               }
-              lastSyncedGlobal.current[field] = cloudHash;
-              hasChange = true;
+              // If local state is dirty (has uncommitted edits/deletions), do NOT merge old cloud data over it,
+              // as that resurrects deleted records! Local changes will sync to server authoritatively.
             }
           });
 
@@ -1444,13 +1447,9 @@ const App: React.FC = () => {
                 // Local state is clean: overwrite month data entirely to respect additions, edits, and deletions
                 nextOutlet[monthKey] = cloudVal;
                 lastSyncedOutlet.current[monthKey] = cloudHash;
-              } else {
-                // Local state has unsaved edits in this month: merge cloud value safely
-                const merged = mergeDeep(prev[monthKey] || {}, cloudVal);
-                nextOutlet[monthKey] = merged;
-                lastSyncedOutlet.current[monthKey] = JSON.stringify(merged);
+                hasChange = true;
               }
-              hasChange = true;
+              // If isLocalDirty is true: do NOT overwrite or merge old cloud data over pending local deletions/edits!
             }
           });
 
@@ -1597,19 +1596,13 @@ const App: React.FC = () => {
             const existingMonth = nextMonths[mKey] || INITIAL_STATE;
             nextMonths[mKey] = {
               ...existingMonth,
-              manpowerData: {
-                ...(existingMonth.manpowerData || {}),
-                ...monthlyUpdates.manpowerData
-              }
+              manpowerData: monthlyUpdates.manpowerData
             };
           }
           nextMonths[monthKey] = {
             ...currentMonthBase,
             ...monthlyUpdates,
-            manpowerData: {
-              ...(currentMonthBase.manpowerData || {}),
-              ...monthlyUpdates.manpowerData
-            }
+            manpowerData: monthlyUpdates.manpowerData
           };
           return nextMonths;
         }
@@ -1637,17 +1630,17 @@ const App: React.FC = () => {
     const { staffList, leaveRecords, dailyOvertime, weeklyOvertime, manpowerData, dailyAttendance, dailyExternalAudit, dailyCPA, dailyGSI, guestComplaints, affiliateHistory, ...rest } = newState;
     
     const globalUpdates: any = {};
-    if (staffList) globalUpdates.staffList = [...staffList].sort(sortStaffList);
-    if (leaveRecords) globalUpdates.leaveRecords = leaveRecords;
-    if (dailyOvertime) globalUpdates.dailyOvertime = dailyOvertime;
-    if (weeklyOvertime) globalUpdates.weeklyOvertime = weeklyOvertime;
-    if (manpowerData) globalUpdates.manpowerData = manpowerData;
-    if (dailyAttendance) globalUpdates.dailyAttendance = dailyAttendance;
-    if (dailyExternalAudit) globalUpdates.dailyExternalAudit = dailyExternalAudit;
-    if (dailyCPA) globalUpdates.dailyCPA = dailyCPA;
-    if (dailyGSI) globalUpdates.dailyGSI = dailyGSI;
-    if (guestComplaints) globalUpdates.guestComplaints = guestComplaints;
-    if (affiliateHistory) globalUpdates.affiliateHistory = affiliateHistory;
+    if (staffList !== undefined) globalUpdates.staffList = Array.isArray(staffList) ? [...staffList].sort(sortStaffList) : [];
+    if (leaveRecords !== undefined) globalUpdates.leaveRecords = leaveRecords;
+    if (dailyOvertime !== undefined) globalUpdates.dailyOvertime = dailyOvertime;
+    if (weeklyOvertime !== undefined) globalUpdates.weeklyOvertime = weeklyOvertime;
+    if (manpowerData !== undefined) globalUpdates.manpowerData = manpowerData;
+    if (dailyAttendance !== undefined) globalUpdates.dailyAttendance = dailyAttendance;
+    if (dailyExternalAudit !== undefined) globalUpdates.dailyExternalAudit = dailyExternalAudit;
+    if (dailyCPA !== undefined) globalUpdates.dailyCPA = dailyCPA;
+    if (dailyGSI !== undefined) globalUpdates.dailyGSI = dailyGSI;
+    if (guestComplaints !== undefined) globalUpdates.guestComplaints = guestComplaints;
+    if (affiliateHistory !== undefined) globalUpdates.affiliateHistory = affiliateHistory;
 
     if (Object.keys(globalUpdates).length > 0) {
       setGlobalData(prev => ({ ...prev, ...globalUpdates }));
@@ -1667,6 +1660,17 @@ const App: React.FC = () => {
         ...prev,
         [monthKey]: nextMonthData
       };
+
+      // Propagate global updates (staffList, manpowerData, etc.) cleanly to all 12 months
+      if (Object.keys(globalUpdates).length > 0) {
+        for (let m = 0; m < 12; m++) {
+          const mk = m.toString();
+          next[mk] = {
+            ...(next[mk] || INITIAL_STATE),
+            ...globalUpdates
+          };
+        }
+      }
 
       // Propagate logistics fields to all months ONLY if logistics was explicitly updated
       const logisticsKeys = [

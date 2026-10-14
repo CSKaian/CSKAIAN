@@ -412,7 +412,7 @@ export const VoidBillModule: React.FC<Props> = ({
 
   // Delete Record
   const handleDeleteRecord = (id: string) => {
-    onUpdate?.(prev => {
+    onUpdate?.((prev: any) => {
       const prevDaily = { ...(prev.dailyVoidBills || {}) };
       Object.keys(prevDaily).forEach(d => {
         if (Array.isArray(prevDaily[d])) {
@@ -425,7 +425,7 @@ export const VoidBillModule: React.FC<Props> = ({
         dailyVoidBills: prevDaily,
         voidBills: prevFlat
       };
-    });
+    }, undefined, true);
     setDeleteConfirmId(null);
     showToast?.('Data Void Bill telah dihapus!', 'info');
   };

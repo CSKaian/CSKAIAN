@@ -1336,7 +1336,7 @@ const SalesModule: React.FC<Props> = ({
           covers: newTotalMTDCovers,
           todayRevenue: 0,
           todayCovers: 0,
-        });
+        }, true);
 
         setShowSuccess({
           title: "SEMUA DATA DIHAPUS",
@@ -1379,7 +1379,7 @@ const SalesModule: React.FC<Props> = ({
           covers: newTotalMTDCovers,
           todayRevenue: 0,
           todayCovers: 0,
-        });
+        }, true);
 
         setLocalBatch({
           lunchRevenue: 0,

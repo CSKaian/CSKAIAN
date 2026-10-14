@@ -94,8 +94,11 @@ export function mergeDeep(local: any, cloud: any): any {
   if (local === undefined) return cloud;
   if (cloud === undefined) return local;
   if (local === null || cloud === null) return cloud !== undefined ? cloud : local;
-  if (typeof local !== 'object' || typeof cloud !== 'object') return cloud;
-  if (Array.isArray(local) || Array.isArray(cloud)) return cloud || local;
+  if (typeof local !== 'object' || typeof cloud !== 'object') return cloud !== undefined ? cloud : local;
+  // If local is an array, local array takes precedence over cloud array so local deletions are respected
+  if (Array.isArray(local) || Array.isArray(cloud)) {
+    return Array.isArray(local) ? local : cloud;
+  }
   
   const merged: any = { ...local };
   Object.keys(cloud).forEach(key => {
@@ -355,189 +358,109 @@ export function unpackOutletDocument(docData: any): any {
     }
   }
 
-  const rootStaffList = Array.isArray(docData.staffList) ? docData.staffList : [];
-  const rootLeaveRecords = Array.isArray(docData.leaveRecords) ? docData.leaveRecords : [];
-  const rootManpowerData = (docData.manpowerData && typeof docData.manpowerData === 'object') ? docData.manpowerData : {};
-  const rootDailyOvertime = (docData.dailyOvertime && typeof docData.dailyOvertime === 'object') ? docData.dailyOvertime : {};
-  const rootDailyAttendance = (docData.dailyAttendance && typeof docData.dailyAttendance === 'object') ? docData.dailyAttendance : {};
-  const rootDailyExternalAudit = (docData.dailyExternalAudit && typeof docData.dailyExternalAudit === 'object') ? docData.dailyExternalAudit : {};
-  const rootDailyCPA = (docData.dailyCPA && typeof docData.dailyCPA === 'object') ? docData.dailyCPA : {};
-  const rootDailyGSI = (docData.dailyGSI && typeof docData.dailyGSI === 'object') ? docData.dailyGSI : {};
-  const rootGuestComplaints = Array.isArray(docData.guestComplaints) ? docData.guestComplaints : [];
-  const rootAffiliateHistory = Array.isArray(docData.affiliateHistory) ? docData.affiliateHistory : [];
-
-  // Consolidate bestStaffList across root and all 12 months
-  let bestStaffList = rootStaffList;
-  if (bestStaffList.length === 0) {
+  // Global authoritative fields from root document
+  let rootStaffList: any[] = Array.isArray(docData.staffList) ? docData.staffList : [];
+  if (docData.staffList === undefined) {
     for (let m = 11; m >= 0; m--) {
       const mStaff = monthlyData[m.toString()]?.staffList;
       if (Array.isArray(mStaff) && mStaff.length > 0) {
-        bestStaffList = mStaff;
+        rootStaffList = mStaff;
         break;
-      }
-    }
-    if (bestStaffList.length === 0) {
-      for (let m = 0; m < 12; m++) {
-        const mStaff = monthlyData[m.toString()]?.staffList;
-        if (Array.isArray(mStaff) && mStaff.length > 0) {
-          bestStaffList = mStaff;
-          break;
-        }
       }
     }
   }
 
-  // Consolidate bestLeaveRecords across root and all 12 months
-  let bestLeaveRecords = rootLeaveRecords;
-  if (bestLeaveRecords.length === 0) {
+  let rootLeaveRecords: any[] = Array.isArray(docData.leaveRecords) ? docData.leaveRecords : [];
+  if (docData.leaveRecords === undefined) {
     for (let m = 11; m >= 0; m--) {
       const mLeave = monthlyData[m.toString()]?.leaveRecords;
       if (Array.isArray(mLeave) && mLeave.length > 0) {
-        bestLeaveRecords = mLeave;
+        rootLeaveRecords = mLeave;
         break;
       }
     }
-    if (bestLeaveRecords.length === 0) {
-      for (let m = 0; m < 12; m++) {
-        const mLeave = monthlyData[m.toString()]?.leaveRecords;
-        if (Array.isArray(mLeave) && mLeave.length > 0) {
-          bestLeaveRecords = mLeave;
-          break;
-        }
+  }
+
+  let rootManpowerData: Record<string, any> = (docData.manpowerData && typeof docData.manpowerData === 'object') ? docData.manpowerData : {};
+  if (docData.manpowerData === undefined || Object.keys(rootManpowerData).length === 0) {
+    for (let m = 11; m >= 0; m--) {
+      const mMan = monthlyData[m.toString()]?.manpowerData;
+      if (mMan && typeof mMan === 'object' && Object.keys(mMan).length > 0) {
+        rootManpowerData = mMan;
+        break;
       }
     }
   }
 
-  // Consolidate manpowerData across root and all 12 months
-  const consolidatedManpowerData: Record<string, any> = { ...rootManpowerData };
-  const consolidatedDailyOvertime: Record<string, any[]> = { ...rootDailyOvertime };
-  const consolidatedDailyAttendance: Record<string, any[]> = { ...rootDailyAttendance };
-  const consolidatedDailyExternalAudit: Record<string, any[]> = { ...rootDailyExternalAudit };
-  const consolidatedDailyCPA: Record<string, any[]> = { ...rootDailyCPA };
-  const consolidatedDailyGSI: Record<string, any[]> = { ...rootDailyGSI };
-  const consolidatedGuestComplaints: any[] = [...rootGuestComplaints];
-  const consolidatedAffiliateHistory: any[] = [...rootAffiliateHistory];
-
-  for (let m = 0; m < 12; m++) {
-    const mData = monthlyData[m.toString()];
-    if (!mData) continue;
-
-    if (mData.manpowerData && typeof mData.manpowerData === 'object') {
-      Object.assign(consolidatedManpowerData, mData.manpowerData);
-    }
-    if (mData.dailyOvertime && typeof mData.dailyOvertime === 'object') {
-      Object.assign(consolidatedDailyOvertime, mData.dailyOvertime);
-    }
-    if (mData.dailyAttendance && typeof mData.dailyAttendance === 'object') {
-      Object.assign(consolidatedDailyAttendance, mData.dailyAttendance);
-    }
-    if (mData.dailyExternalAudit && typeof mData.dailyExternalAudit === 'object') {
-      Object.assign(consolidatedDailyExternalAudit, mData.dailyExternalAudit);
-    }
-    if (mData.dailyCPA && typeof mData.dailyCPA === 'object') {
-      Object.assign(consolidatedDailyCPA, mData.dailyCPA);
-    }
-    if (mData.dailyGSI && typeof mData.dailyGSI === 'object') {
-      Object.assign(consolidatedDailyGSI, mData.dailyGSI);
-    }
-    if (Array.isArray(mData.guestComplaints)) {
-      mData.guestComplaints.forEach((c: any) => {
-        if (c && !consolidatedGuestComplaints.some(gc => gc.id === c.id)) {
-          consolidatedGuestComplaints.push(c);
-        }
-      });
-    }
-    if (Array.isArray(mData.affiliateHistory)) {
-      mData.affiliateHistory.forEach((a: any) => {
-        if (a && !consolidatedAffiliateHistory.some(ga => ga.id === a.id)) {
-          consolidatedAffiliateHistory.push(a);
-        }
-      });
+  let rootDailyOvertime: Record<string, any[]> = (docData.dailyOvertime && typeof docData.dailyOvertime === 'object') ? docData.dailyOvertime : {};
+  if (docData.dailyOvertime === undefined || Object.keys(rootDailyOvertime).length === 0) {
+    for (let m = 11; m >= 0; m--) {
+      const mOT = monthlyData[m.toString()]?.dailyOvertime;
+      if (mOT && typeof mOT === 'object' && Object.keys(mOT).length > 0) {
+        rootDailyOvertime = mOT;
+        break;
+      }
     }
   }
+
+  const rootDailyAttendance: Record<string, any[]> = (docData.dailyAttendance && typeof docData.dailyAttendance === 'object') ? docData.dailyAttendance : {};
+  const rootDailyExternalAudit: Record<string, any[]> = (docData.dailyExternalAudit && typeof docData.dailyExternalAudit === 'object') ? docData.dailyExternalAudit : {};
+  const rootDailyCPA: Record<string, any[]> = (docData.dailyCPA && typeof docData.dailyCPA === 'object') ? docData.dailyCPA : {};
+  const rootDailyGSI: Record<string, any[]> = (docData.dailyGSI && typeof docData.dailyGSI === 'object') ? docData.dailyGSI : {};
+  const rootGuestComplaints: any[] = Array.isArray(docData.guestComplaints) ? docData.guestComplaints : [];
+  const rootAffiliateHistory: any[] = Array.isArray(docData.affiliateHistory) ? docData.affiliateHistory : [];
+
+  const rootLogisticItems: any[] = Array.isArray(docData.logisticItems) ? docData.logisticItems : [];
+  const rootDailyLogisticRecords: Record<string, any> = (docData.dailyLogisticRecords && typeof docData.dailyLogisticRecords === 'object') ? docData.dailyLogisticRecords : {};
+  const rootPeminjamanRecords: any[] = Array.isArray(docData.peminjamanRecords) ? docData.peminjamanRecords : [];
+  const rootLogisticBeginningStocks: Record<string, any> = (docData.logisticBeginningStocks && typeof docData.logisticBeginningStocks === 'object') ? docData.logisticBeginningStocks : {};
+  const rootLogisticPeriodPrices: Record<string, any> = (docData.logisticPeriodPrices && typeof docData.logisticPeriodPrices === 'object') ? docData.logisticPeriodPrices : {};
 
   const filledMonthlyData: any = {};
   for (let m = 0; m < 12; m++) {
     const mKey = m.toString();
     const mData = monthlyData[mKey] || {};
-    
-    const staffListToUse = (Array.isArray(mData.staffList) && mData.staffList.length > 0)
-      ? mData.staffList
-      : bestStaffList;
-
-    const leaveRecordsToUse = (Array.isArray(mData.leaveRecords) && mData.leaveRecords.length > 0)
-      ? mData.leaveRecords
-      : bestLeaveRecords;
-
-    const manpowerDataToUse = {
-      ...consolidatedManpowerData,
-      ...(mData.manpowerData && typeof mData.manpowerData === 'object' ? mData.manpowerData : {})
-    };
 
     filledMonthlyData[mKey] = {
       ...mData,
-      staffList: staffListToUse,
-      leaveRecords: leaveRecordsToUse,
-      manpowerData: manpowerDataToUse,
-      dailyOvertime: { ...consolidatedDailyOvertime, ...(mData.dailyOvertime || {}) },
-      dailyAttendance: { ...consolidatedDailyAttendance, ...(mData.dailyAttendance || {}) },
-      dailyExternalAudit: { ...consolidatedDailyExternalAudit, ...(mData.dailyExternalAudit || {}) },
-      dailyCPA: { ...consolidatedDailyCPA, ...(mData.dailyCPA || {}) },
-      dailyGSI: { ...consolidatedDailyGSI, ...(mData.dailyGSI || {}) },
-      guestComplaints: consolidatedGuestComplaints,
-      affiliateHistory: consolidatedAffiliateHistory
+      staffList: rootStaffList,
+      leaveRecords: rootLeaveRecords,
+      manpowerData: rootManpowerData,
+      dailyOvertime: rootDailyOvertime,
+      dailyAttendance: rootDailyAttendance,
+      dailyExternalAudit: rootDailyExternalAudit,
+      dailyCPA: rootDailyCPA,
+      dailyGSI: rootDailyGSI,
+      guestComplaints: rootGuestComplaints,
+      affiliateHistory: rootAffiliateHistory,
+      logisticItems: rootLogisticItems,
+      dailyLogisticRecords: rootDailyLogisticRecords,
+      peminjamanRecords: rootPeminjamanRecords,
+      logisticBeginningStocks: rootLogisticBeginningStocks,
+      logisticPeriodPrices: rootLogisticPeriodPrices
     };
   }
 
-  // Attach monthlyData map for components that inspect outletMonths.monthlyData?.[m]
+  // Attach authoritative references
   filledMonthlyData.monthlyData = monthlyData;
+  filledMonthlyData.staffList = rootStaffList;
+  filledMonthlyData.leaveRecords = rootLeaveRecords;
+  filledMonthlyData.manpowerData = rootManpowerData;
+  filledMonthlyData.dailyOvertime = rootDailyOvertime;
+  filledMonthlyData.dailyAttendance = rootDailyAttendance;
+  filledMonthlyData.dailyExternalAudit = rootDailyExternalAudit;
+  filledMonthlyData.dailyCPA = rootDailyCPA;
+  filledMonthlyData.dailyGSI = rootDailyGSI;
+  filledMonthlyData.guestComplaints = rootGuestComplaints;
+  filledMonthlyData.affiliateHistory = rootAffiliateHistory;
+  filledMonthlyData.logisticItems = rootLogisticItems;
+  filledMonthlyData.dailyLogisticRecords = rootDailyLogisticRecords;
+  filledMonthlyData.peminjamanRecords = rootPeminjamanRecords;
+  filledMonthlyData.logisticBeginningStocks = rootLogisticBeginningStocks;
+  filledMonthlyData.logisticPeriodPrices = rootLogisticPeriodPrices;
 
-  // Consolidate logistics across months and root
-  const consolidatedLogisticItems: any[] = Array.isArray(docData.logisticItems) ? [...docData.logisticItems] : [];
-  const consolidatedDailyLogisticRecords: Record<string, any> = { ...(docData.dailyLogisticRecords || {}) };
-  const consolidatedPeminjamanRecords: any[] = Array.isArray(docData.peminjamanRecords) ? [...docData.peminjamanRecords] : [];
-  const consolidatedLogisticBeginningStocks: Record<string, any> = { ...(docData.logisticBeginningStocks || {}) };
-  const consolidatedLogisticPeriodPrices: Record<string, any> = { ...(docData.logisticPeriodPrices || {}) };
-
-  for (let m = 0; m < 12; m++) {
-    const mData = monthlyData[m.toString()];
-    if (!mData) continue;
-    if (Array.isArray(mData.logisticItems) && consolidatedLogisticItems.length === 0) {
-      consolidatedLogisticItems.push(...mData.logisticItems);
-    }
-    if (mData.dailyLogisticRecords && typeof mData.dailyLogisticRecords === 'object') {
-      Object.assign(consolidatedDailyLogisticRecords, mData.dailyLogisticRecords);
-    }
-    if (Array.isArray(mData.peminjamanRecords)) {
-      mData.peminjamanRecords.forEach((p: any) => {
-        if (p && p.id && !consolidatedPeminjamanRecords.some(cp => cp.id === p.id)) {
-          consolidatedPeminjamanRecords.push(p);
-        }
-      });
-    }
-    if (mData.logisticBeginningStocks && typeof mData.logisticBeginningStocks === 'object') {
-      Object.assign(consolidatedLogisticBeginningStocks, mData.logisticBeginningStocks);
-    }
-    if (mData.logisticPeriodPrices && typeof mData.logisticPeriodPrices === 'object') {
-      Object.assign(consolidatedLogisticPeriodPrices, mData.logisticPeriodPrices);
-    }
-  }
-
-  // Find most recent non-empty sales & expenses to attach as default root objects
-  let defaultSales = docData.sales || null;
-  let defaultExpenses = docData.expenses || null;
-  for (let m = 11; m >= 0; m--) {
-    const mData = monthlyData[m.toString()];
-    if (!defaultSales && mData?.sales) defaultSales = mData.sales;
-    if (!defaultExpenses && mData?.expenses) defaultExpenses = mData.expenses;
-  }
-  if (defaultSales) {
-    filledMonthlyData.sales = defaultSales;
-    if (defaultSales.dailyRecording) {
-      filledMonthlyData.dailyRecording = defaultSales.dailyRecording;
-    }
-  }
-  if (defaultExpenses) filledMonthlyData.expenses = defaultExpenses;
+  if (docData.sales) filledMonthlyData.sales = docData.sales;
+  if (docData.expenses) filledMonthlyData.expenses = docData.expenses;
   if (docData.monthlyCogsData) filledMonthlyData.monthlyCogsData = docData.monthlyCogsData;
   if (docData.dailyTargets) filledMonthlyData.dailyTargets = docData.dailyTargets;
   if (docData.dailyQA) filledMonthlyData.dailyQA = docData.dailyQA;
@@ -565,22 +488,6 @@ export function unpackOutletDocument(docData: any): any {
   if (docData.promoSettings) filledMonthlyData.promoSettings = docData.promoSettings;
   if (docData.bankingPromos) filledMonthlyData.bankingPromos = docData.bankingPromos;
   if (docData.dailyStrategy) filledMonthlyData.dailyStrategy = docData.dailyStrategy;
-
-  // Consolidate dailyStrategy across months
-  const consolidatedDailyStrategy: Record<string, any> = { ...(docData.dailyStrategy || {}) };
-  for (let m = 0; m < 12; m++) {
-    const mData = monthlyData[m.toString()];
-    if (mData?.dailyStrategy && typeof mData.dailyStrategy === 'object') {
-      Object.assign(consolidatedDailyStrategy, mData.dailyStrategy);
-    }
-  }
-  filledMonthlyData.dailyStrategy = consolidatedDailyStrategy;
-
-  filledMonthlyData.logisticItems = consolidatedLogisticItems;
-  filledMonthlyData.dailyLogisticRecords = consolidatedDailyLogisticRecords;
-  filledMonthlyData.peminjamanRecords = consolidatedPeminjamanRecords;
-  filledMonthlyData.logisticBeginningStocks = consolidatedLogisticBeginningStocks;
-  filledMonthlyData.logisticPeriodPrices = consolidatedLogisticPeriodPrices;
 
   return filledMonthlyData;
 }
@@ -629,55 +536,12 @@ async function executeFirestoreWrite(
       payloadToMerge.monthlyData = completeMonthsToMerge;
     }
 
-    let topStaffList: any[] | null = null;
-    let topLeaveRecords: any[] | null = null;
-    const topManpowerData: Record<string, any> = {};
-
-    Object.values(dataToSave).forEach((monthData: any) => {
-      if (monthData) {
-        if (Array.isArray(monthData.staffList) && monthData.staffList.length > 0) {
-          topStaffList = monthData.staffList;
-        }
-        if (Array.isArray(monthData.leaveRecords) && monthData.leaveRecords.length > 0) {
-          topLeaveRecords = monthData.leaveRecords;
-        }
-        if (monthData.manpowerData && typeof monthData.manpowerData === 'object') {
-          Object.assign(topManpowerData, monthData.manpowerData);
-        }
-      }
-    });
-
-    if (topStaffList !== null) { payloadToMerge.staffList = topStaffList; hasData = true; }
-    if (topLeaveRecords !== null) { payloadToMerge.leaveRecords = topLeaveRecords; hasData = true; }
-    if (Object.keys(topManpowerData).length > 0) { payloadToMerge.manpowerData = topManpowerData; hasData = true; }
-
-    Object.values(dataToSave).forEach((mVal: any) => {
-      if (mVal) {
-        const topKeys = [
-          'sales', 'dailyTargets', 'expenses', 'monthlyCogsData',
-          'dailyMainKitchenLedger', 'dailyMainStoreLedger', 'dailyChemicalLedger',
-          'dailyCashLedger', 'dailyCommodityLedger', 'dailyGuestSuppliesLedger',
-          'dailyCityLedger', 'dailyQA', 'dailyGoogleReview', 'dailyBreakTime',
-          'dailyTgifLedger', 'dailySukandaLedger', 'dailyEverestLedger',
-          'dailyPanfilaLedger', 'dailyIkigaiLedger', 'dailyKebunkuLedger',
-          'dailySaungKubilLedger', 'dailyGasLedger', 'dailyThirdPartyLedger',
-          'energyCost', 'weeklyOvertime', 'staffList', 'leaveRecords', 'manpowerData',
-          'promoSettings', 'bankingPromos', 'dailyStrategy'
-        ];
-        topKeys.forEach(k => {
-          if (mVal[k] !== undefined) {
-            payloadToMerge[k] = cleanData(mVal[k]);
-            hasData = true;
-          }
-        });
-      }
-    });
-
     if (extraGlobalToSave && typeof extraGlobalToSave === 'object') {
       const allowedGlobals = [
         'staffList', 'leaveRecords', 'dailyOvertime', 'weeklyOvertime', 'dailyAttendance',
         'dailyExternalAudit', 'dailyCPA', 'dailyGSI', 'guestComplaints',
-        'affiliateHistory', 'manpowerData'
+        'affiliateHistory', 'manpowerData', 'logisticItems', 'peminjamanRecords',
+        'logisticBeginningStocks', 'logisticPeriodPrices'
       ];
       allowedGlobals.forEach(gKey => {
         if (extraGlobalToSave[gKey] !== undefined) {
@@ -705,7 +569,8 @@ export async function saveOutletData(
   outletId: string, 
   data: Record<string, any>, 
   oldData?: Record<string, any>,
-  extraGlobal?: Record<string, any>
+  extraGlobal?: Record<string, any>,
+  isPriority: boolean = false
 ): Promise<boolean> {
   // 1. Immediately save & synchronize to High-Availability Cloud Server API (instant cross-device sync)
   let serverSyncSuccess = false;
@@ -745,7 +610,8 @@ export async function saveOutletData(
   }
 
   let firestoreSuccess = false;
-  if (timeSinceLast >= FIRESTORE_MIN_WRITE_INTERVAL_MS) {
+  // If high priority (e.g. deletion action) or throttle window elapsed, execute immediately
+  if (isPriority || timeSinceLast >= FIRESTORE_MIN_WRITE_INTERVAL_MS) {
     if (pendingFirestoreTimerByOutlet[outletId]) {
       clearTimeout(pendingFirestoreTimerByOutlet[outletId]);
       delete pendingFirestoreTimerByOutlet[outletId];

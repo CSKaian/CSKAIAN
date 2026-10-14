@@ -445,7 +445,7 @@ export const MainStoreKitchenModule: React.FC<Props> = ({
           }
         }
       };
-    });
+    }, undefined, true);
 
     showToast?.(`Item "${itemName}" dihapus.`, 'info');
   };

@@ -320,7 +320,7 @@ export const ComplimentaryModule: React.FC<Props> = ({
           }
         }
       };
-    });
+    }, undefined, true);
 
     showToast?.(`Item "${itemName}" dihapus.`, 'info');
   };

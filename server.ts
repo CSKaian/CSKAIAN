@@ -176,37 +176,21 @@ async function startServer() {
           if (!isNaN(mNum) && mNum >= 0 && mNum <= 11 && mVal && typeof mVal === 'object') {
             // Strip any nested monthlyData or invalid keys
             const { monthlyData: _ignored, ...cleanMonth } = mVal as any;
-            existingMonthly[mKey] = {
-              ...(existingMonthly[mKey] || {}),
-              ...cleanMonth
-            };
+            existingMonthly[mKey] = cleanMonth;
           }
         });
       }
 
-      // Propagate top-level fields
+      // Propagate top-level global fields
       if (extraGlobal && typeof extraGlobal === 'object') {
-        Object.assign(existing, extraGlobal);
-      }
-
-      if (data && typeof data === 'object') {
-        Object.values(data).forEach((mVal: any) => {
-          if (mVal && typeof mVal === 'object') {
-            const topKeys = [
-              'sales', 'dailyTargets', 'expenses', 'monthlyCogsData',
-              'dailyMainKitchenLedger', 'dailyMainStoreLedger', 'dailyChemicalLedger',
-              'dailyCashLedger', 'dailyCommodityLedger', 'dailyGuestSuppliesLedger',
-              'dailyCityLedger', 'dailyQA', 'dailyGoogleReview', 'dailyBreakTime',
-              'dailyTgifLedger', 'dailySukandaLedger', 'dailyEverestLedger',
-              'dailyPanfilaLedger', 'dailyIkigaiLedger', 'dailyKebunkuLedger',
-              'dailySaungKubilLedger', 'dailyGasLedger', 'dailyThirdPartyLedger',
-              'energyCost', 'weeklyOvertime', 'staffList', 'leaveRecords', 'manpowerData'
-            ];
-            topKeys.forEach(k => {
-              if (mVal[k] !== undefined) {
-                existing[k] = mVal[k];
-              }
-            });
+        const allowedGlobals = [
+          'staffList', 'leaveRecords', 'dailyOvertime', 'weeklyOvertime', 'dailyAttendance',
+          'dailyExternalAudit', 'dailyCPA', 'dailyGSI', 'guestComplaints',
+          'affiliateHistory', 'manpowerData'
+        ];
+        allowedGlobals.forEach(gKey => {
+          if (extraGlobal[gKey] !== undefined) {
+            existing[gKey] = extraGlobal[gKey];
           }
         });
       }
