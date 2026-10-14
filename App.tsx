@@ -1290,24 +1290,45 @@ const App: React.FC = () => {
       }
     }, [syncStatus]);
 
-  // Periodic connection check
+  // Lightweight connection & quota check (zero redundant Firestore reads to save quota)
   useEffect(() => {
     if (!user.isLoggedIn) return;
     
-    const checkConnection = async () => {
+    const handleOnline = () => {
+      setSyncStatus('online');
+      setQuotaExceededState(isQuotaExceeded());
+    };
+    const handleOffline = () => {
+      setSyncStatus('offline');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Light ping to server API health check (costs 0 Firestore quota/reads)
+    const checkServerHealth = async () => {
+      if (typeof window !== 'undefined' && !window.navigator.onLine) {
+        setSyncStatus('offline');
+        return;
+      }
       try {
-        await testConnection();
-        setQuotaExceededState(isQuotaExceeded());
-      } catch (e) {
-        setSyncStatus('error');
-        setQuotaExceededState(isQuotaExceeded());
+        const res = await fetch('/api/health');
+        if (res.ok) {
+          setSyncStatus('online');
+        }
+      } catch {
+        // Network or server unreachable
       }
     };
 
-    const interval = setInterval(checkConnection, 10000); // Check every 10s for fast auto-recovery
-    checkConnection(); // Initial check
+    const interval = setInterval(checkServerHealth, 60000);
+    checkServerHealth();
     
-    return () => clearInterval(interval);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
   }, [user.isLoggedIn]);
 
   // Auto-refresh when the app becomes visible/active again (especially useful on mobile browsers and tablets which suspend tabs)
@@ -1470,29 +1491,23 @@ const App: React.FC = () => {
 
     if (isNaN(firstDay.getTime()) || isNaN(lastDay.getTime())) return;
     
-    const firstDayStr = firstDay.toISOString().split('T')[0];
-    const lastDayStr = lastDay.toISOString().split('T')[0];
+    const firstDayStr = toLocalDateStr(firstDay);
+    const lastDayStr = toLocalDateStr(lastDay);
+    const expectedMonthPrefix = `${yearIdx}-${String(monthIdx + 1).padStart(2, '0')}`;
 
-    // Only update if the current dates are outside the selected month or invalid
-    const currentStart = new Date(filters.startDate || firstDayStr);
-    const currentEnd = new Date(filters.endDate || lastDayStr);
-    
-    if (isNaN(currentStart.getTime()) || isNaN(currentEnd.getTime()) || currentStart.getMonth() !== monthIdx || currentEnd.getMonth() !== monthIdx) {
+    // Only update if dates are empty or outside the selected month/year to prevent jumping loop
+    if (
+      !filters.startDate || 
+      !filters.endDate || 
+      !filters.startDate.startsWith(expectedMonthPrefix)
+    ) {
       setFilters(prev => ({
         ...prev,
         startDate: firstDayStr,
         endDate: lastDayStr
       }));
     }
-  }, [filters.month, filters.year, filters.startDate, filters.endDate]);
-
-  useEffect(() => {
-    setIsRefreshing(true);
-    const timer = setTimeout(() => {
-      setIsRefreshing(false);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [filters.month, filters.startDate, filters.endDate]);
+  }, [filters.month, filters.year]);
 
   useEffect(() => {
     const handleFsChange = () => {
@@ -2051,7 +2066,7 @@ const App: React.FC = () => {
         case ModuleType.VOID_BILL:
           return <VoidBillModule
             data={currentData}
-            staffList={currentData.staffList || []}
+            staffList={globalData.staffList || currentData.staffList || []}
             selectedOutlet={user.selectedOutlet || ''}
             filters={filters}
             onUpdate={updateFullState}

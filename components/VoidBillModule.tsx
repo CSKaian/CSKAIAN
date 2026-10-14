@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AppState, VoidBillRecord, Staff } from '../types';
+import { resolveOutletManpowerData } from '../lib/manpowerUtils';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { motion, AnimatePresence } from 'motion/react';
@@ -161,11 +162,138 @@ export const VoidBillModule: React.FC<Props> = ({
     };
   }, [monthRecords]);
 
-  // Staff options from Manpower
+  // Staff options extracted from Manpower Table of the current outlet
   const activeStaffList = useMemo(() => {
-    const activeStaff = staffList.filter(s => s && s.name && s.status !== 'RESIGNED');
-    return activeStaff.sort((a, b) => a.name.localeCompare(b.name));
-  }, [staffList]);
+    const list: Array<{
+      id: string;
+      name: string;
+      role: string;
+      division: string;
+      section: string;
+      isLeader: boolean;
+      source: 'MANPOWER' | 'STAFF_LIST';
+    }> = [];
+    const seenNames = new Set<string>();
+
+    const addStaff = (
+      name: string,
+      role: string,
+      division: string,
+      section: string,
+      isLeader: boolean,
+      source: 'MANPOWER' | 'STAFF_LIST',
+      id?: string
+    ) => {
+      const cleanName = (name || '').trim();
+      if (!cleanName) return;
+      const key = cleanName.toLowerCase();
+      if (seenNames.has(key)) return;
+      seenNames.add(key);
+
+      const roleLower = (role || '').toLowerCase();
+      const secUpper = (section || '').toUpperCase();
+      const checkLeader = isLeader ||
+        roleLower.includes('manager') ||
+        roleLower.includes('supervisor') ||
+        roleLower.includes('captain') ||
+        roleLower.includes('leader') ||
+        roleLower.includes('mod') ||
+        roleLower.includes('head') ||
+        roleLower.includes('chef') ||
+        roleLower.includes('cdp') ||
+        secUpper.includes('LEADER');
+
+      list.push({
+        id: id || `st_${cleanName.replace(/\s+/g, '_')}`,
+        name: cleanName,
+        role: role || section || 'Staff',
+        division: (division || 'SERVICE').toUpperCase(),
+        section: section || role || 'General',
+        isLeader: checkLeader,
+        source
+      });
+    };
+
+    // 1. Primary: Extract from Manpower Table of this specific outlet
+    const resolvedManpower = resolveOutletManpowerData(data.manpowerData, currentOutlet, currentMonthKey);
+    if (resolvedManpower && Array.isArray(resolvedManpower.sections)) {
+      resolvedManpower.sections.forEach(sec => {
+        const secDivision = sec.division || 'SERVICE';
+        if (Array.isArray(sec.slots)) {
+          sec.slots.forEach(slot => {
+            if (slot.staffName && slot.staffName.trim()) {
+              addStaff(
+                slot.staffName,
+                slot.position || sec.name,
+                secDivision,
+                sec.name,
+                sec.name.toUpperCase().includes('LEADER'),
+                'MANPOWER',
+                slot.id || slot.staffId
+              );
+            }
+          });
+        }
+      });
+    }
+
+    // Also scan all keys in data.manpowerData for this outlet
+    if (data.manpowerData && typeof data.manpowerData === 'object') {
+      Object.entries(data.manpowerData).forEach(([key, mpData]: [string, any]) => {
+        if (!key.startsWith(currentOutlet) || !mpData || !Array.isArray(mpData.sections)) return;
+        mpData.sections.forEach((sec: any) => {
+          if (Array.isArray(sec.slots)) {
+            sec.slots.forEach((slot: any) => {
+              if (slot.staffName && slot.staffName.trim()) {
+                addStaff(
+                  slot.staffName,
+                  slot.position || sec.name,
+                  sec.division || 'SERVICE',
+                  sec.name || '',
+                  (sec.name || '').toUpperCase().includes('LEADER'),
+                  'MANPOWER',
+                  slot.id
+                );
+              }
+            });
+          }
+        });
+      });
+    }
+
+    // 2. Secondary: Combine with staffList for this outlet (active / not resigned)
+    if (Array.isArray(staffList)) {
+      staffList.forEach(s => {
+        if (!s || !s.name) return;
+        const sOutlet = s.outlet || '';
+        if (sOutlet && sOutlet !== 'ALL' && sOutlet !== currentOutlet) return;
+        if (s.status === 'RESIGNED' || s.status === 'RESIGNED_PROSEDUR' || s.status === 'RESIGNED_NON_PROSEDUR') return;
+        addStaff(
+          s.name,
+          s.role || '',
+          s.division || 'SERVICE',
+          s.role || '',
+          s.isLeader || false,
+          'STAFF_LIST',
+          s.id
+        );
+      });
+    }
+
+    return list.sort((a, b) => {
+      if (a.division !== b.division) return a.division.localeCompare(b.division);
+      if (a.isLeader && !b.isLeader) return -1;
+      if (!a.isLeader && b.isLeader) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [data.manpowerData, currentOutlet, currentMonthKey, staffList]);
+
+  // Leaders / PIC options from Manpower
+  const picOptions = useMemo(() => {
+    const leaders = activeStaffList.filter(s => s.isLeader);
+    const nonLeaders = activeStaffList.filter(s => !s.isLeader);
+    return [...leaders, ...nonLeaders];
+  }, [activeStaffList]);
 
   // Open Modal for New Record
   const handleOpenAddModal = () => {
@@ -175,7 +303,8 @@ export const VoidBillModule: React.FC<Props> = ({
     setFormAmount('');
     setFormReasonPreset(COMMON_REASONS[0]);
     setFormReasonCustom('');
-    setFormPic(activeStaffList.find(s => s.isLeader)?.name || activeStaffList[0]?.name || '');
+    const defaultPic = activeStaffList.find(s => s.isLeader)?.name || activeStaffList[0]?.name || '';
+    setFormPic(defaultPic);
     setFormBillNumber('');
     setFormTableNumber('');
     setFormShift('LUNCH');
@@ -561,14 +690,27 @@ export const VoidBillModule: React.FC<Props> = ({
             <select
               value={selectedStaffFilter}
               onChange={e => setSelectedStaffFilter(e.target.value)}
-              className="bg-slate-950 px-2.5 py-1.5 rounded-lg border border-white/10 text-white text-xs outline-none focus:border-rose-500"
+              className="bg-slate-950 px-2.5 py-1.5 rounded-lg border border-white/10 text-white text-xs outline-none focus:border-rose-500 cursor-pointer"
             >
-              <option value="ALL">Semua Staff ({stats.staffRanking.length})</option>
-              {stats.staffRanking.map(st => (
-                <option key={st.name} value={st.name}>
-                  {st.name} ({st.count}x void)
-                </option>
-              ))}
+              <option value="ALL">Semua Staff ({monthRecords.length} Data)</option>
+              {stats.staffRanking.length > 0 && (
+                <optgroup label="Staff Pernah Void Bulan Ini">
+                  {stats.staffRanking.map(st => (
+                    <option key={`rnk_${st.name}`} value={st.name}>
+                      {st.name} ({st.count}x void - Rp {formatIDR(st.amount)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label={`Seluruh Staff Manpower ${currentOutlet}`}>
+                {activeStaffList
+                  .filter(st => !stats.staffRanking.some(r => r.name.toLowerCase() === st.name.toLowerCase()))
+                  .map(st => (
+                    <option key={`flt_all_${st.name}`} value={st.name}>
+                      {st.name} — {st.role || st.division}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
           </div>
 
@@ -793,36 +935,62 @@ export const VoidBillModule: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {/* NAMA STAFF (PILIHAN DARI DATA MANPOWER) */}
+                {/* NAMA STAFF (PILIHAN DARI TABEL MANPOWER OUTLET) */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+                      <i className="fas fa-user-tag text-rose-400"></i>
                       Nama Staff Pelaku Void <span className="text-rose-500">*</span>
                     </label>
-                    <span className="text-[8px] font-bold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
-                      Dari Data Manpower
+                    <span className="text-[8px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                      Tabel Manpower ({activeStaffList.length} Staff)
                     </span>
                   </div>
                   <div className="space-y-2">
                     <select
                       value={formStaffName}
-                      onChange={e => setFormStaffName(e.target.value)}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setFormStaffName(val);
+                        const matched = activeStaffList.find(s => s.name.toLowerCase() === val.toLowerCase());
+                        if (matched && !formPic) {
+                          const defaultPic = activeStaffList.find(s => s.isLeader);
+                          if (defaultPic) setFormPic(defaultPic.name);
+                        }
+                      }}
                       required
-                      className="w-full bg-slate-950 p-2.5 rounded-xl border border-white/10 text-white text-xs font-black uppercase outline-none focus:border-rose-500"
+                      className="w-full bg-slate-950 p-2.5 rounded-xl border border-white/10 text-white text-xs font-black uppercase outline-none focus:border-rose-500 cursor-pointer"
                     >
-                      <option value="">-- Pilih Nama Staff dari Manpower --</option>
-                      {activeStaffList.map(st => (
-                        <option key={st.id || st.name} value={st.name}>
-                          {st.name} {st.role ? `• ${st.role}` : ''} {st.division ? `(${st.division})` : ''}
-                        </option>
-                      ))}
+                      <option value="">-- Pilih Nama Staff dari Tabel Manpower --</option>
+                      {['SERVICE', 'KITCHEN', 'BAR'].map(div => {
+                        const inDiv = activeStaffList.filter(s => (s.division || 'SERVICE').toUpperCase() === div);
+                        if (inDiv.length === 0) return null;
+                        return (
+                          <optgroup key={div} label={`DIVISI ${div} (${inDiv.length} Orang)`}>
+                            {inDiv.map(st => (
+                              <option key={st.id || st.name} value={st.name}>
+                                {st.name} — {st.role || st.section} {st.isLeader ? '⭐ (Leader)' : ''}
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
+                      {activeStaffList.filter(s => !['SERVICE', 'KITCHEN', 'BAR'].includes((s.division || '').toUpperCase())).length > 0 && (
+                        <optgroup label="STAFF LAINNYA">
+                          {activeStaffList.filter(s => !['SERVICE', 'KITCHEN', 'BAR'].includes((s.division || '').toUpperCase())).map(st => (
+                            <option key={st.id || st.name} value={st.name}>
+                              {st.name} — {st.role || st.division}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                     {/* Fallback input jika staff belum terdaftar */}
-                    <div className="text-[8px] text-slate-500 flex items-center gap-1.5">
-                      <span>Tidak ada di daftar?</span>
+                    <div className="text-[8px] text-slate-500 flex items-center gap-1.5 bg-white/[0.02] p-1.5 rounded-lg border border-white/5">
+                      <span className="whitespace-nowrap font-bold">Ketik manual:</span>
                       <input
                         type="text"
-                        placeholder="Atau ketik nama staff manual..."
+                        placeholder="Ketik nama staff manual jika tidak ada di list..."
                         value={formStaffName}
                         onChange={e => setFormStaffName(e.target.value)}
                         className="bg-slate-950 px-2 py-0.5 rounded border border-white/10 text-white text-[10px] outline-none focus:border-rose-500 flex-1 uppercase"
@@ -856,7 +1024,7 @@ export const VoidBillModule: React.FC<Props> = ({
                         key={chip}
                         type="button"
                         onClick={() => setFormAmount(chip)}
-                        className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 text-[8px] font-bold border border-white/5 transition-all"
+                        className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 text-[8px] font-bold border border-white/5 transition-all cursor-pointer"
                       >
                         +{formatIDR(chip)}
                       </button>
@@ -872,7 +1040,7 @@ export const VoidBillModule: React.FC<Props> = ({
                   <select
                     value={formReasonPreset}
                     onChange={e => setFormReasonPreset(e.target.value)}
-                    className="w-full bg-slate-950 p-2.5 rounded-xl border border-white/10 text-white text-xs font-bold outline-none focus:border-rose-500 mb-2"
+                    className="w-full bg-slate-950 p-2.5 rounded-xl border border-white/10 text-white text-xs font-bold outline-none focus:border-rose-500 mb-2 cursor-pointer"
                   >
                     {COMMON_REASONS.map(r => (
                       <option key={r} value={r}>{r}</option>
@@ -890,14 +1058,15 @@ export const VoidBillModule: React.FC<Props> = ({
                   )}
                 </div>
 
-                {/* PIC (PILIHAN NAMA DARI DATA MANPOWER) */}
+                {/* PIC (PILIHAN DARI DATA MANPOWER) */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+                      <i className="fas fa-shield-halved text-emerald-400"></i>
                       PIC Verifikasi / Otorisasi <span className="text-rose-500">*</span>
                     </label>
-                    <span className="text-[8px] font-bold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
-                      Dari Data Manpower
+                    <span className="text-[8px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      Leader / Manager
                     </span>
                   </div>
                   <div className="space-y-2">
@@ -905,23 +1074,23 @@ export const VoidBillModule: React.FC<Props> = ({
                       value={formPic}
                       onChange={e => setFormPic(e.target.value)}
                       required
-                      className="w-full bg-slate-950 p-2.5 rounded-xl border border-white/10 text-white text-xs font-black uppercase outline-none focus:border-rose-500"
+                      className="w-full bg-slate-950 p-2.5 rounded-xl border border-white/10 text-white text-xs font-black uppercase outline-none focus:border-emerald-500 cursor-pointer"
                     >
                       <option value="">-- Pilih PIC dari Manpower (Leader / Manager) --</option>
-                      {activeStaffList.map(st => (
-                        <option key={st.id || st.name} value={st.name}>
-                          {st.isLeader ? '⭐ ' : ''}{st.name} {st.role ? `• ${st.role}` : ''}
+                      {picOptions.map(st => (
+                        <option key={`pic_${st.id || st.name}`} value={st.name}>
+                          {st.isLeader ? '⭐ ' : ''}{st.name} {st.role ? `• ${st.role}` : ''} ({st.division || 'SERVICE'})
                         </option>
                       ))}
                     </select>
-                    <div className="text-[8px] text-slate-500 flex items-center gap-1.5">
-                      <span>Ketik PIC manual:</span>
+                    <div className="text-[8px] text-slate-500 flex items-center gap-1.5 bg-white/[0.02] p-1.5 rounded-lg border border-white/5">
+                      <span className="whitespace-nowrap font-bold">Ketik PIC manual:</span>
                       <input
                         type="text"
-                        placeholder="Ketik nama PIC..."
+                        placeholder="Ketik nama PIC manual..."
                         value={formPic}
                         onChange={e => setFormPic(e.target.value)}
-                        className="bg-slate-950 px-2 py-0.5 rounded border border-white/10 text-white text-[10px] outline-none focus:border-rose-500 flex-1 uppercase"
+                        className="bg-slate-950 px-2 py-0.5 rounded border border-white/10 text-white text-[10px] outline-none focus:border-emerald-500 flex-1 uppercase"
                       />
                     </div>
                   </div>
